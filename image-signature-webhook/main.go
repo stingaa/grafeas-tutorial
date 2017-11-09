@@ -18,10 +18,7 @@ import (
 	"log"
 	"os"
 
-	//grafeas "github.com/Grafeas/client-go/v1alpha1"
-
 	"k8s.io/api/admission/v1alpha1"
-	//"net/url"
 	"net/http"
 	"crypto/tls"
 	"io/ioutil"
@@ -144,7 +141,7 @@ func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
 		data, err = json.Marshal(occurance)
 		if err != nil {
 			log.Println(err)
-			//w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		log.Printf(fmt.Sprintf("%d. %s", i+1, string(data)))
@@ -161,7 +158,7 @@ done:
 	data, err = json.Marshal(admissionReviewStatus)
 	if err != nil {
 		log.Println(err)
-		//w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
