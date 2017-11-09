@@ -155,14 +155,16 @@ func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
 	goto done
 
 done:
-	data, err = json.Marshal(admissionReviewStatus)
+	ar := v1alpha1.AdmissionReview{
+		Status: admissionReviewStatus,
+	}
+
+	data, err = json.Marshal(ar)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	log.Println(string(data))
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
