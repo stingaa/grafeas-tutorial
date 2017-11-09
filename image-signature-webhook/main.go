@@ -12,33 +12,27 @@
 package main
 
 import (
-	"bytes"
-	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
-	"strings"
 
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
-	"golang.org/x/crypto/openpgp/clearsign"
-	"golang.org/x/crypto/openpgp/packet"
-
-	grafeas "github.com/Grafeas/client-go/v1alpha1"
+	//grafeas "github.com/Grafeas/client-go/v1alpha1"
 
 	"k8s.io/api/admission/v1alpha1"
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	//"net/url"
+	"net/http"
+	"crypto/tls"
+	"io/ioutil"
+	"net/url"
 )
 
 var (
 	grafeasUrl  string
+	grafeasUser  string
+	grafeasPassword  string
+	filter  string
 	tlsCertFile string
 	tlsKeyFile  string
 )
@@ -49,10 +43,28 @@ var (
 )
 
 func main() {
-	flag.StringVar(&grafeasUrl, "grafeas", "http://grafeas:8080", "The Grafeas server address")
+	grafeasUrl = os.Getenv("GRAFEAS_SERVER_URL")
+	filter = os.Getenv("GRAFEAS_FILTER")
+	grafeasUser = os.Getenv("GRAFEAS_USER")
+	grafeasPassword = os.Getenv("GRAFEAS_PASSWORD")
+	if grafeasUrl == "" {
+		flag.StringVar(&grafeasUrl, "grafeas", "http://grafeas:8080", "The Grafeas server address")
+	}
+	if grafeasUser == "" {
+		flag.StringVar(&grafeasUser, "grafeasUser", "", "The Grafeas username")
+	}
+	if grafeasPassword == "" {
+		flag.StringVar(&grafeasPassword, "grafeasPassword", "", "The Grafeas password")
+	}
+	if filter == "" {
+		flag.StringVar(&filter, "filter", "", "Grafeas filter expression")
+	}
+
 	flag.StringVar(&tlsCertFile, "tls-cert", "/etc/admission-controller/tls/cert.pem", "TLS certificate file.")
 	flag.StringVar(&tlsKeyFile, "tls-key", "/etc/admission-controller/tls/key.pem", "TLS key file.")
 	flag.Parse()
+
+	log.Println(fmt.Sprintf("Grafeas server URL: %s", grafeasUrl))
 
 	http.HandleFunc("/", admissionReviewHandler)
 	s := http.Server{
@@ -62,6 +74,7 @@ func main() {
 		},
 	}
 	log.Fatal(s.ListenAndServeTLS(tlsCertFile, tlsKeyFile))
+
 }
 
 func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,178 +85,111 @@ func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ar := v1alpha1.AdmissionReview{}
-	if err := json.Unmarshal(data, &ar); err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
+	admissionReviewStatus := v1alpha1.AdmissionReviewStatus{Allowed: true}
 
-	pod := v1.Pod{}
-	if err := json.Unmarshal(ar.Spec.Object.Raw, &pod); err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	admissionReviewStatus := v1alpha1.AdmissionReviewStatus{Allowed: false}
-	for _, container := range pod.Spec.Containers {
-		// Retrieve all occurrences.
-		// This call should be replaced by a filtered called based on
-		// the container image under review.
-		u := fmt.Sprintf("%s/%s", grafeasUrl, occurrencesPath)
-		resp, err := http.Get(u)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		data, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Println(err)
-			resp.Body.Close()
-			continue
-		}
-
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			log.Printf("non 200 status code: %d", resp.StatusCode)
-			continue
-		}
-
-		occurrencesResponse := grafeas.ListOccurrencesResponse{}
-		if err := json.Unmarshal(data, &occurrencesResponse); err != nil {
-			log.Println(err)
-			continue
-		}
-
-		// Find a valid signature for the given container image.
-		match := false
-		for _, occurrence := range occurrencesResponse.Occurrences {
-			resourceUrl := occurrence.ResourceUrl
-			signature := occurrence.Attestation.PgpSignedAttestation.Signature
-			keyId := occurrence.Attestation.PgpSignedAttestation.PgpKeyId
-
-			log.Printf("Container Image: %s", container.Image)
-			log.Printf("ResourceUrl: %s", resourceUrl)
-			log.Printf("Signature: %s", signature)
-			log.Printf("KeyId: %s", keyId)
-
-			if container.Image != strings.TrimPrefix(resourceUrl, "https://") {
-				continue
-			}
-
-			match = true
-
-			s, err := base64.StdEncoding.DecodeString(signature)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			publicKey := fmt.Sprintf("/etc/admission-controller/pubkeys/%s.pub", keyId)
-			log.Printf("Using public key: %s", publicKey)
-
-			f, err := os.Open(publicKey)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			block, err := armor.Decode(f)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			if block.Type != openpgp.PublicKeyType {
-				log.Println("Not public key")
-				continue
-			}
-
-			reader := packet.NewReader(block.Body)
-			pkt, err := reader.Next()
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			key, ok := pkt.(*packet.PublicKey)
-			if !ok {
-				log.Println("Not public key")
-				continue
-			}
-
-			b, _ := clearsign.Decode(s)
-
-			reader = packet.NewReader(b.ArmoredSignature.Body)
-			pkt, err = reader.Next()
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-
-			sig, ok := pkt.(*packet.Signature)
-			if !ok {
-				log.Println("Not signature")
-				continue
-			}
-
-			hash := sig.Hash.New()
-			io.Copy(hash, bytes.NewReader(b.Bytes))
-
-			err = key.VerifySignature(hash, sig)
-			if err != nil {
-				log.Println(err)
-
-				message := fmt.Sprintf("Signature verification failed for container image: %s", container.Image)
-				log.Printf(message)
-
-				admissionReviewStatus.Allowed = false
-				admissionReviewStatus.Result = &metav1.Status{
-					Reason: metav1.StatusReasonInvalid,
-					Details: &metav1.StatusDetails{
-						Causes: []metav1.StatusCause{
-							{Message: message},
-						},
-					},
-				}
-				goto done
-			}
-
-			log.Printf("Signature verified for container image: %s", container.Image)
-			admissionReviewStatus.Allowed = true
-		}
-
-		if !match {
-			message := fmt.Sprintf("No matched signatures for container image: %s", container.Image)
-			log.Printf(message)
-			admissionReviewStatus.Allowed = false
-			admissionReviewStatus.Result = &metav1.Status{
-				Reason: metav1.StatusReasonInvalid,
-				Details: &metav1.StatusDetails{
-					Causes: []metav1.StatusCause{
-						{Message: message},
-					},
-				},
-			}
-			goto done
-		}
-	}
-
-done:
-	ar = v1alpha1.AdmissionReview{
-		Status: admissionReviewStatus,
-	}
-
-	data, err = json.Marshal(ar)
+	urlString := fmt.Sprintf("%s%s", grafeasUrl, occurrencesPath)
+	u, err := url.Parse(urlString)
 	if err != nil {
 		log.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	if filter != "" {
+		parameters := url.Values{}
+		parameters.Add("filter", filter)
+		u.RawQuery = parameters.Encode()
+	}
+	urlString = u.String()
+	log.Println(fmt.Sprintf("Sending request to grafeas: %s", urlString))
+
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", urlString, nil)
+	req.Header.Set("Content-Type", "application/json")
+	if grafeasUser != "" {
+		req.SetBasicAuth(grafeasUser, grafeasPassword)
+	}
+	resp, err := client.Do(req)
+
+	occurances := make([]Occurance, 0)
+
+	if err != nil {
+		log.Println(err)
+		goto done
+	}
+
+	data, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		resp.Body.Close()
+		goto done
+	}
+
+	log.Println(fmt.Sprintf("Received response from grafeas: %s", string(data)))
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("non 200 status code: %d", resp.StatusCode)
+		goto done
+	}
+
+	err = json.Unmarshal(data, &occurances)
+	if err != nil {
+		log.Println(err)
+		goto done
+	}
+
+	log.Printf(fmt.Sprintf("Found %d occurances", len(occurances)))
+	for i, occurance := range occurances {
+		data, err = json.Marshal(occurance)
+		if err != nil {
+			log.Println(err)
+			//w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		log.Printf(fmt.Sprintf("%d. %s", i+1, string(data)))
+
+		totalIssues := len(occurance.VulnerabilityDetails.PackageIssue)
+		if totalIssues > 0 {
+			admissionReviewStatus.Allowed = false
+		}
+	}
+
+	goto done
+
+done:
+	data, err = json.Marshal(admissionReviewStatus)
+	if err != nil {
+		log.Println(err)
+		//w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	log.Println(string(data))
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 }
+
+type Occurance struct {
+	VulnerabilityDetails VulnerabilityDetails
+}
+
+type VulnerabilityDetails struct {
+	PackageIssue []PackageIssue
+}
+
+type PackageIssue struct {
+	SeverityName string
+	AffectedLocation AffectedLocation
+}
+
+type AffectedLocation struct {
+	Package string
+	Version Version
+}
+
+type Version struct {
+	name string
+}
+
