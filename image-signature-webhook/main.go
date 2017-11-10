@@ -19,6 +19,7 @@ import (
 	"os"
 
 	"k8s.io/api/admission/v1alpha1"
+	"k8s.io/api/core/v1"
 	"net/http"
 	"crypto/tls"
 	"io/ioutil"
@@ -82,8 +83,12 @@ func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	admissionReviewStatus := v1alpha1.AdmissionReviewStatus{Allowed: true}
+    pod := v1.Pod{}
 
+	admissionReviewStatus := v1alpha1.AdmissionReviewStatus{Allowed: true}
+    for _, container := range pod.Spec.Containers {
+        log.Printf("Container Image: %s", container.Image)
+    }
 	urlString := fmt.Sprintf("%s%s", grafeasUrl, occurrencesPath)
 	u, err := url.Parse(urlString)
 	if err != nil {
