@@ -21,6 +21,7 @@ import (
 	"k8s.io/api/admission/v1alpha1"
 	"k8s.io/api/core/v1"
 	"net/http"
+	"encoding/base64"
 	"crypto/tls"
 	"io/ioutil"
 	"net/url"
@@ -83,22 +84,35 @@ func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    pod := v1.Pod{}
+    ar := v1alpha1.AdmissionReview{}
+    if err := json.Unmarshal(data, &ar); err != nil {
+    	log.Println(err)
+    	w.WriteHeader(http.StatusBadRequest)
+    	return
+    }
 
+    pod := v1.Pod{}
+    if err := json.Unmarshal(ar.Spec.Object.Raw, &pod); err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	admissionReviewStatus := v1alpha1.AdmissionReviewStatus{Allowed: true}
     for _, container := range pod.Spec.Containers {
-        log.Printf("Container Image: %s", container.Image)
-    }
+
+    imageFilter := base64.StdEncoding.EncodeToString([]byte("http://localhost:5001/library/" + container.Image))
 	urlString := fmt.Sprintf("%s%s", grafeasUrl, occurrencesPath)
+
 	u, err := url.Parse(urlString)
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
 	if filter != "" {
 		parameters := url.Values{}
-		parameters.Add("filter", filter)
+		parameters.Add("filter", imageFilter)
 		u.RawQuery = parameters.Encode()
 	}
 	urlString = u.String()
@@ -156,11 +170,10 @@ func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
 			admissionReviewStatus.Allowed = false
 		}
 	}
-
 	goto done
-
+    }
 done:
-	ar := v1alpha1.AdmissionReview{
+	ar = v1alpha1.AdmissionReview{
 		Status: admissionReviewStatus,
 	}
 
