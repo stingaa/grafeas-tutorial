@@ -20,6 +20,7 @@ import (
 
 	"k8s.io/api/admission/v1alpha1"
 	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
 	"encoding/base64"
 	"crypto/tls"
@@ -164,10 +165,19 @@ func admissionReviewHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf(fmt.Sprintf("%d. %s", i+1, string(data)))
+        message := fmt.Sprintf("Security vulnerabilities detected by JFrog Xray for container image: %s", container.Image)
 
 		totalIssues := len(occurance.VulnerabilityDetails.PackageIssue)
 		if totalIssues > 0 {
 			admissionReviewStatus.Allowed = false
+            admissionReviewStatus.Result = &metav1.Status{
+					Reason: metav1.StatusReasonInvalid,
+					Details: &metav1.StatusDetails{
+						Causes: []metav1.StatusCause{
+							{Message: message},
+						},
+					},
+				}
 		}
 	}
 	goto done
