@@ -24,5 +24,5 @@ spec:
     spec:
       containers:
         - name: grafeas
-          image: "gcr.io/hightowerlabs/grafeas:0.0.1"
+          image: "us.gcr.io/grafeas/grafeas-server:v0.1.0"
           imagePullPolicy: Always
