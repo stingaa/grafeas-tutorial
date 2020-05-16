@@ -132,12 +132,20 @@ kubectl port-forward \
   8080:8080
 ```
 
+Create the the project
+
+```
+curl -X POST http://localhost:8080/v1beta1/projects \
+     -H "Content-Type: application/json" \
+     --data '{"name":"projects/image-signing"}'
+```
+
 Create the `production` attestationAuthority note:
 
 ```
-curl -X POST \
-  "http://127.0.0.1:8080/v1alpha1/projects/image-signing/notes?noteId=production" \
-  -d @note.json
+curl -X POST \                                                                      
+  "http://localhost:8080/v1beta1/projects/image-signing/notes?noteId=production" \
+  -H "Content-Type: application/json" -d @note.json
 ```
 
 Generate an pgpSignedAttestation occurrence:
