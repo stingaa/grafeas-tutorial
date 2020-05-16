@@ -13,9 +13,9 @@ A Kubernetes 1.8+ cluster is required with support for the [external admission w
 If you have access to [Google Container Engine](https://cloud.google.com/container-engine/) use the gcloud command to create a 1.8 Kubernetes cluster:
 
 ```
-gcloud alpha container clusters create grafeas \
-  --enable-kubernetes-alpha \
-  --cluster-version 1.8.0-gke.1
+gcloud container clusters create grafeas \
+  --cluster-version 1.15.11-gke.3 \
+  --zone us-central1-a
 ```
 
 > Any Kubernetes 1.8 cluster with support for external admission webhooks will work. 
