@@ -138,12 +138,15 @@ Create the the project
 curl -X POST http://localhost:8080/v1beta1/projects \
      -H "Content-Type: application/json" \
      --data '{"name":"projects/image-signing"}'
+     
+curl http://localhost:8080/v1beta1/projects
+{"projects":[{"name":"projects/image-signing"}],"nextPageToken":""}%          
 ```
 
 Create the `production` attestationAuthority note:
 
 ```
-curl -X POST \                                                                      
+curl -X POST \
   "http://localhost:8080/v1beta1/projects/image-signing/notes?noteId=production" \
   -H "Content-Type: application/json" -d @note.json
 ```
@@ -164,10 +167,12 @@ cat > occurrence.json <<EOF
   "resourceUrl": "${RESOURCE_URL}",
   "noteName": "projects/image-signing/notes/production",
   "attestation": {
-    "pgpSignedAttestation": {
-       "signature": "${GPG_SIGNATURE}",
-       "contentType": "application/vnd.gcr.image.url.v1",
-       "pgpKeyId": "${GPG_KEY_ID}"
+    "attestation": {
+      "pgpSignedAttestation": {
+        "signature": "${GPG_SIGNATURE}",
+        "contentType": "CONTENT_TYPE_UNSPECIFIED",
+        "pgpKeyId": "${GPG_KEY_ID}"
+      }
     }
   }
 }
@@ -178,7 +183,7 @@ Post the pgpSignedAttestation occurrence:
 
 ```
 curl -X POST \
-  'http://127.0.0.1:8080/v1alpha1/projects/image-signing/occurrences' \
+  'http://127.0.0.1:8080/v1beta1/projects/image-signing/occurrences' \
   -d @occurrence.json
 ```
 
